@@ -123,6 +123,7 @@ To run it on your local machine, follow the steps hereafter indicated.
 The first step consists in generating the artifacts needed by the nodes to run, which means:
 
 - generate the crypto material through the `cryptogen` CLI;
+- fetch certificates generated on remote hosts when the component workflow includes a fetch phase (for example, Fabric-CA in `generate_crypto`);
 - generate the genesis block through `armageddon` and `configtxgen` CLIs;
 - build/install the Fabric-X component binaries on the control node or directly on remote nodes, depending on the `bin_build_on_control_node` variable (see more the [Roles](./roles/README.md) documentation);
 - distribute the above-mentioned artifacts on the remote nodes.
@@ -192,7 +193,7 @@ Here there is a list of the most used commands:
 | `login-cr`              | Log a container engine within a container registry.                          |
 | `setup`                 | Wrapper for `binaries` + `artifacts` + `configs`.                            |
 | `artifacts`             | Wrapper for `generate-crypto` + `genesis-block`.                             |
-| `generate-crypto`       | Generate the crypto material on the controller node.                         |
+| `generate-crypto`       | Generate crypto material and run component-specific fetch steps when defined. |
 | `genesis-block`         | Build the genesis block for the network.                                     |
 | `binaries`              | Build/install binaries on controller or remote nodes for the targeted hosts. |
 | `clean`                 | Clean all the artifacts and binaries built on the controller node.           |
@@ -210,7 +211,7 @@ Here there is a list of the most used commands:
 | `run-command`           | Run a generic command on the targeted hosts.                                 |
 | `ping`                  | Check that the component ports are open.                                     |
 | `get-metrics`           | Get the metrics from the targeted components.                                |
-| `fetch-crypto`          | Fetch the crypto material from the targeted hosts.                           |
+| `fetch-crypto`          | Fetch/refresh crypto material from the targeted hosts on demand.             |
 | `fetch-logs`            | Fetch the logs from the targeted hosts.                                      |
 | `limit-rate`            | Set the TPS rate on the load generators.                                     |
 
