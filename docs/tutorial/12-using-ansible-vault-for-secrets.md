@@ -10,9 +10,9 @@ Every sample inventory so far, including the one you built in the last lesson, s
 - [What You Will Learn](#what-you-will-learn)
 - [The Reference Inventory](#the-reference-inventory)
 - [Viewing It](#viewing-it)
-- [Deploying It](#deploying-it)
 - [How a Vaulted Value Looks in an Inventory](#how-a-vaulted-value-looks-in-an-inventory)
-- [Stop Typing the Password: `vault_password_file`](#stop-typing-the-password-vault_password_file)
+- [Stop Typing the Password: `ANSIBLE_VAULT_PASSWORD_FILE`](#stop-typing-the-password-ansible_vault_password_file)
+- [Deploying It](#deploying-it)
 - [Encrypting Your Own Secrets](#encrypting-your-own-secrets)
   - [A Whole File: `ansible-vault create` / `edit`](#a-whole-file-ansible-vault-create--edit)
   - [One Value In Place: `ansible-vault encrypt_string`](#one-value-in-place-ansible-vault-encrypt_string)
@@ -24,7 +24,7 @@ Every sample inventory so far, including the one you built in the last lesson, s
 
 - Where the collection's Vault-compatible reference inventory lives and what makes it different from `fabric-x.yaml`.
 - How to view and run a Vault-protected inventory.
-- How to configure a `vault_password_file` so you stop typing `--ask-vault-pass` on every command.
+- How to set `ANSIBLE_VAULT_PASSWORD_FILE` so you stop typing `--vault-password-file` on every command.
 - How to encrypt a whole file, or a single value in place, with `ansible-vault`.
 - How to move your own inventory's credentials from lesson 11 behind Vault.
 
@@ -63,10 +63,10 @@ You might reach for `ansible-vault view` next, the way you would for a whole enc
 
 ```shell
 export ANSIBLE_INVENTORY=examples/inventory/local/fabric-x-vault.yaml
-make vault-view TARGET_HOSTS=fca-orderer-org1-db
+make vault-view TARGET_HOSTS=fca-orderer-org1-db VAULT_VAR_NAME=postgres_password
 ```
 
-This runs [`examples/playbooks/998-vault-view.yaml`](../../examples/playbooks/998-vault-view.yaml), which prints every variable for the targeted host or group, decrypted — `postgres_password: example` included. Omit `TARGET_HOSTS` (default `all`) to print the whole inventory, every host.
+This runs [`examples/playbooks/998-vault-view.yaml`](../../examples/playbooks/998-vault-view.yaml), which prints the named variable for the targeted host or group, decrypted — `example`, here. Omit `VAULT_VAR_NAME` to print every variable instead of one, and omit `TARGET_HOSTS` (default `all`) to print the whole inventory, every host.
 
 > [!TIP]
 > Every Vault-protected value in `fabric-x-vault.yaml` is also written as a `# decrypted value: ...` comment directly above its encrypted block, so you can look one up by just reading the file — no command needed. This particular inventory exists purely to demonstrate the mechanism, so nothing in it is worth protecting from a curious reader; do not carry that habit into an inventory holding real credentials.
@@ -80,38 +80,6 @@ You can also query a single variable directly, exactly as you validated your own
 ```
 
 The second command prints `example` — Ansible transparently decrypts the value the moment a task or template reads it. Nothing downstream of the inventory (roles, playbooks, generated configuration) needs to know or care that a variable came from a Vault-encrypted block instead of plain text.
-
-## Deploying It
-
-Viewing the file proves the decryption works. Actually running it proves the rest of the collection — roles, playbooks, generated configuration — behaves identically whether a credential came from plain text or from Vault. Two steps, and nothing else changes from how you have deployed every other inventory in this tutorial:
-
-**Step 1 — create the password file**, if you have not already done so in [Viewing It](#viewing-it):
-
-```shell
-echo -n 'fabricx-vault-demo' > .vault_pass
-```
-
-This writes the tutorial's demo password to `.vault_pass` at the repository root — the same file the resolver script in the next section reads.
-
-**Step 2 — run it**, exactly like every other local sample:
-
-```shell
-export ANSIBLE_INVENTORY=examples/inventory/local/fabric-x-vault.yaml
-make setup start init
-make ping
-```
-
-No `--vault-password-file` or `--ask-vault-pass` flag anywhere in that sequence, including inside the `make` targets themselves, which have no such flag to pass. It works because `examples/ansible.cfg` — this repository's own config, already in place before this lesson — points `vault_password_file` at a resolver script that reads `.vault_pass` automatically. [Stop Typing the Password](#stop-typing-the-password-vault_password_file), next, explains exactly how.
-
-When you are done experimenting, tear down and remove the password file — it must never stay behind or get committed:
-
-```shell
-make teardown wipe
-rm -f .vault_pass
-```
-
-> [!TIP]
-> [`examples/inventory/docs/local/fabric-x-vault.md`](../../examples/inventory/docs/local/fabric-x-vault.md) is this inventory's own reference page, with the same steps and a summary of exactly which variables are Vault-protected.
 
 ## How a Vaulted Value Looks in an Inventory
 
@@ -130,42 +98,52 @@ Three things to notice:
 - The header line `$ANSIBLE_VAULT;1.1;AES256` records the format version and cipher, not the password. Losing the password still means losing the data; this line alone decrypts nothing.
 - The block is a YAML literal scalar (`|`), so its continuation lines only need to be indented *more* than the `key:` line — the exact column does not matter, which is why you will see different indentation depths for a top-level `all.vars` entry versus one nested five groups deep.
 
-## Stop Typing the Password: `vault_password_file`
+## Stop Typing the Password: `ANSIBLE_VAULT_PASSWORD_FILE`
 
-Passing `--vault-password-file .vault_pass` on every command gets old fast, and `--ask-vault-pass` is worse when most of your commands touch inventories with no Vault content at all. [`examples/ansible.cfg`](../../examples/ansible.cfg) solves this with a resolver script instead of a fixed path:
-
-```ini
-vault_password_file = ../scripts/resolve_vault_password.sh
-```
-
-[`scripts/resolve_vault_password.sh`](../../scripts/resolve_vault_password.sh) is a small executable. Ansible treats an *executable* `vault_password_file` as a script and uses its stdout as the password. The script reads `.vault_pass` at the repository root if it exists, and prints a placeholder otherwise:
+Passing `--vault-password-file .vault_pass` on every command gets old fast — and none of the `make` targets you have used throughout this tutorial (`make setup`, `make vault-view`, `make vault-encrypt`, ...) have a flag for it at all. Ansible's own `ANSIBLE_VAULT_PASSWORD_FILE` environment variable solves this without adding anything to `examples/ansible.cfg`:
 
 ```shell
-#!/usr/bin/env bash
-...
-if [[ -f "$vault_pass_file" ]]; then
-    cat "$vault_pass_file"
-else
-    echo "no-local-vault-pass-configured"
-fi
+export ANSIBLE_VAULT_PASSWORD_FILE="$PWD/.vault_pass"
 ```
 
-That placeholder is what makes this safe to leave configured globally. Ansible only asks the resolver for a password at the moment it needs to decrypt something — a run against `fabric-x.yaml` or the inventory you built in lesson 11 never touches Vault content, so the placeholder is fetched and immediately ignored. Only a run against `fabric-x-vault.yaml` (or your own Vault-protected variables) with no `.vault_pass` in place fails, and only at the point it actually needs the real password.
-
-With this wired in, the commands from the previous section no longer need a flag:
+Every `ansible`, `ansible-playbook`, `ansible-inventory`, and `ansible-vault` command in this shell session now decrypts using `.vault_pass` automatically, including inside `make` targets — they run in the same environment. The commands from [Viewing It](#viewing-it) no longer need a flag:
 
 ```shell
-echo -n 'fabricx-vault-demo' > .vault_pass
-export ANSIBLE_CONFIG=examples/ansible.cfg
 .venv/bin/ansible-inventory -i examples/inventory/local/fabric-x-vault.yaml --graph
 ```
 
 > [!WARNING]
-> `.vault_pass` is gitignored (`.vault_pass*` in [`.gitignore`](../../.gitignore)). Never commit it, and never put a real Vault password in a file, environment variable, or command line that ends up in a shell history you share. When you are done with this lesson, remove it:
+> This is session-wide, not scoped to `fabric-x-vault.yaml`. Once exported, **every** Ansible command in this shell tries to use `.vault_pass` as its Vault password — including ones against inventories with no Vault content at all, like `fabric-x.yaml` or the inventory you built in lesson 11. If `.vault_pass` is missing, or holds the wrong password, those commands fail too, immediately, with no graceful fallback. Unset it (and remove the file) once you are done with this lesson:
 >
 > ```shell
+> unset ANSIBLE_VAULT_PASSWORD_FILE
 > rm -f .vault_pass
 > ```
+>
+> `.vault_pass` is gitignored (`.vault_pass*` in [`.gitignore`](../../.gitignore)). Never commit it, and never put a real Vault password in a file, environment variable, or command line that ends up in a shell history you share.
+
+## Deploying It
+
+Viewing the file proves the decryption works. Actually running it proves the rest of the collection — roles, playbooks, generated configuration — behaves identically whether a credential came from plain text or from Vault. Nothing else changes from how you have deployed every other inventory in this tutorial, since `ANSIBLE_VAULT_PASSWORD_FILE` from the previous section is already exported:
+
+```shell
+export ANSIBLE_INVENTORY=examples/inventory/local/fabric-x-vault.yaml
+make setup start init
+make ping
+```
+
+If you skipped straight here: `make` targets have no flag for the Vault password, so this only works with `ANSIBLE_VAULT_PASSWORD_FILE` already exported, as shown in [Stop Typing the Password](#stop-typing-the-password-ansible_vault_password_file) above.
+
+When you are done experimenting, tear down and clean up — the network, the password file, and the environment variable must not stay behind:
+
+```shell
+make teardown wipe
+unset ANSIBLE_VAULT_PASSWORD_FILE
+rm -f .vault_pass
+```
+
+> [!TIP]
+> [`examples/inventory/docs/local/fabric-x-vault.md`](../../examples/inventory/docs/local/fabric-x-vault.md) is this inventory's own reference page, with the same steps and a summary of exactly which variables are Vault-protected.
 
 ## Encrypting Your Own Secrets
 
@@ -241,7 +219,7 @@ The first command shows the encrypted block (proof it is stored safely); the sec
 > 1. Encrypt `postgres_password` as shown above.
 > 2. The load generator's `secret: orderer-loadgenPWD` is a per-host template, like the orderer identity secrets in `fabric-x-vault.yaml`. Introduce a `vault_identity_secret_suffix` variable in `all.vars`, encrypt just the `PWD` suffix, and update the load generator's `secret:` line to reference it the same way `fabric-x-vault.yaml` does.
 > 3. Confirm both with `ansible-inventory --host` and an `ansible ... -m debug` call.
-> 4. Configure `vault_password_file` for your own bundle so you stop passing `--vault-password-file` by hand — either point it at your own resolver script, or, if you are comfortable with the simpler failure mode, directly at a fixed `.vault_pass` path.
+> 4. Export `ANSIBLE_VAULT_PASSWORD_FILE` for your own bundle so you stop passing `--vault-password-file` by hand, the same way this lesson did for `fabric-x-vault.yaml`. Then think about what changes if you want that to persist across shells instead of just this session.
 
 <details markdown="1">
 <summary>Solution</summary>
@@ -281,14 +259,22 @@ Step 3:
 
 The second prints `orderer-loadgenPWD` — identical to the plaintext version, because `vault_identity_secret_suffix` decrypts to `PWD` and the surrounding Jinja expression is unchanged.
 
-Step 4: the direct-path option is a one-line `ansible.cfg`:
+Step 4:
+
+```shell
+export ANSIBLE_VAULT_PASSWORD_FILE="$PWD/.vault_pass"
+```
+
+This is exactly what this lesson used for `fabric-x-vault.yaml` — no extra file, no configuration to maintain. Its sharp edge is the one from the [warning above](#stop-typing-the-password-ansible_vault_password_file): it is session-wide, so every Ansible command you run afterward — against this inventory or any other — tries to use `.vault_pass`, and fails immediately if that file is missing or holds the wrong password. That is fine for a bundle only you run, in a shell you control.
+
+To make it persist across shells instead, the direct option is a one-line addition to your own `ansible.cfg`:
 
 ```ini
 [defaults]
 vault_password_file = ./.vault_pass
 ```
 
-This is simpler, but it has a sharp edge worth knowing about deliberately: if `.vault_pass` does not exist, **every** Ansible command against this inventory fails at startup, including ones that touch no Vault content at all — there is no graceful fallback. The resolver-script approach this lesson used for the collection's own `examples/ansible.cfg` avoids that by returning a harmless placeholder when no local password is configured, at the cost of one extra file. Either is a legitimate choice; the direct path is fine for a bundle only you run, and the script is worth it the moment other people (or CI) run commands against the same repository without necessarily having Vault secrets configured.
+This has the identical failure mode, permanently, for anyone who runs a command in that directory without `.vault_pass` in place — including CI. If that matters (multiple people, or CI, running commands against the same repository without necessarily having Vault secrets configured), point `vault_password_file` at an executable script instead of a fixed path: Ansible treats an executable `vault_password_file` as a resolver and uses its stdout as the password, so the script can check whether `.vault_pass` exists and print a harmless placeholder when it does not — failing only once something actually needs to decrypt, not on every command. This collection's own CI takes a different, narrower route for the same problem: it exports `ANSIBLE_VAULT_PASSWORD_FILE` for just the one job that tests `fabric-x-vault.yaml`, scoped with GitHub Actions' `$GITHUB_ENV`, so every other job's non-Vaulted inventory is entirely unaffected — see [`.github/workflows/test.yaml`](../../.github/workflows/test.yaml).
 
 </details>
 

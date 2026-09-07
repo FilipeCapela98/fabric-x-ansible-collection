@@ -336,11 +336,11 @@ ping:
 	@printf "$(COLOR_CYAN)🚩 Checking component ports on hosts [$(COLOR_GREEN)$(TARGET_HOSTS)$(COLOR_CYAN)]...$(COLOR_RESET)\n"
 	$(ANSIBLE_PLAYBOOK) "$(PLAYBOOK_PATH)/70-ping.yaml" --extra-vars '{"target_hosts": "$(TARGET_HOSTS)"}';
 
-# Print every decrypted variable for the targeted hosts, Vault-protected or not (e.g. make vault-view TARGET_HOSTS=grafana).
+# Print a decrypted variable (or every variable if VAULT_VAR_NAME is unset) for the targeted hosts (e.g. make vault-view TARGET_HOSTS=grafana VAULT_VAR_NAME=grafana_password).
 .PHONY: vault-view
 vault-view:
 	@printf "$(COLOR_CYAN)🚩 Printing decrypted variables for hosts [$(COLOR_GREEN)$(TARGET_HOSTS)$(COLOR_CYAN)]...$(COLOR_RESET)\n"
-	$(ANSIBLE_PLAYBOOK) "$(PLAYBOOK_PATH)/998-vault-view.yaml" --extra-vars '{"target_hosts": "$(TARGET_HOSTS)"}';
+	$(ANSIBLE_PLAYBOOK) "$(PLAYBOOK_PATH)/998-vault-view.yaml" --extra-vars '{"target_hosts": "$(TARGET_HOSTS)", "vault_var_name": "$(VAULT_VAR_NAME)"}';
 
 # Encrypt a new value into Vault notation, ready to paste into an inventory (e.g. make vault-encrypt VAULT_VAR_NAME=postgres_password).
 .PHONY: vault-encrypt
